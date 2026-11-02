@@ -24,7 +24,7 @@ Por eso `GameApp` se adapta a esa estructura.
   exclusivamente para `admin` y `editor`. Otros módulos no cambian sus permisos.
 - `app/config.py`: parámetro opcional `ADMIN_GAME_PUBLIC_BASE_URL`.
 - `vercel.json`: incluye los archivos de juegos en el paquete del servidor.
-- `alembic/versions/0008_games.py` y `0009_more_games.py`: migraciones de juegos,
+- `alembic/versions/0008_games.py`: migración de juegos,
   sin modificar las migraciones ni snapshots anteriores.
 - `tests/games/`: pruebas aisladas del módulo y lógica de juegos.
 
