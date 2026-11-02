@@ -6,11 +6,13 @@ PostgreSQL/RLS se verifican por separado, no mediante SQLite.
 """
 import importlib.util
 from io import StringIO
+from html.parser import HTMLParser
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
+from urllib.parse import urlsplit
 
 os.environ['ADMIN_DATABASE_URL'] = 'sqlite+aiosqlite://'
 os.environ['ADMIN_GAME_PUBLIC_BASE_URL'] = ''
@@ -188,15 +190,43 @@ async def test_rejected_writes_and_audit_rollback(environment, monkeypatch):
         assert len((await db.scalars(select(AuditLog))).all()) == 1
 
 
-def test_twenty_games_and_immutable_catalog():
+def test_catalog_and_immutable_migrations():
     spec = importlib.util.spec_from_file_location('games_revision', ROOT / 'alembic/versions/0008_games.py')
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
+    extra_spec = importlib.util.spec_from_file_location('more_games_revision', ROOT / 'alembic/versions/0009_more_games.py')
+    extra = importlib.util.module_from_spec(extra_spec)
+    extra_spec.loader.exec_module(extra)
     entries = {p.parent.name for p in (ROOT / 'app/static/juegos').glob('*/index.html')}
-    assert len(entries) == 20
-    assert {g['slug'] for g in migration.INITIAL_GAMES} == entries
+    assert len(entries) == 30
+    assert len(migration.INITIAL_GAMES) == 20
+    assert len(extra.ADDITIONAL_GAMES) == 10
+    assert {g['slug'] for g in migration.INITIAL_GAMES + extra.ADDITIONAL_GAMES} == entries
     for slug in entries:
         assert (ROOT / f'app/static/juegos/{slug}/juego.json').is_file()
+
+
+def test_local_styles_and_scripts_exist_for_every_game():
+    class Assets(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.refs = []
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            key = 'src' if tag == 'script' else 'href' if tag == 'link' else None
+            if key and attrs.get(key):
+                self.refs.append(attrs[key])
+
+    for entry in (ROOT / 'app/static/juegos').glob('*/index.html'):
+        parser = Assets()
+        parser.feed(entry.read_text(encoding='utf-8'))
+        assert parser.refs, entry
+        for ref in parser.refs:
+            url = urlsplit(ref)
+            if not url.netloc and not url.scheme:
+                assert not url.path.startswith('/'), (entry, ref)
+                assert (entry.parent / url.path).is_file(), (entry, ref)
 
 
 def test_postgresql_migration_sql_without_database():
@@ -220,7 +250,25 @@ def test_postgresql_migration_sql_without_database():
     assert all(g['slug'] in sql for g in migration.INITIAL_GAMES)
 
 
-async def test_all_twenty_local_games_can_be_served(environment):
+def test_catalog_expansion_sql_preserves_existing_entries():
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    spec = importlib.util.spec_from_file_location('games_expansion_sql', ROOT / 'alembic/versions/0009_more_games.py')
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    output = StringIO()
+    context = MigrationContext.configure(dialect_name='postgresql', opts={
+        'as_sql': True, 'literal_binds': True, 'output_buffer': output})
+    with Operations.context(context):
+        migration.upgrade()
+    sql = output.getvalue()
+    assert sql.count('ON CONFLICT (tenant_id, slug) DO NOTHING') == 10
+    assert 'set_config' in sql
+    assert all(g['target_url'] in sql for g in migration.ADDITIONAL_GAMES)
+    assert 'UPDATE admin.games_apps' not in sql and 'DELETE FROM' not in sql
+
+
+async def test_all_local_games_can_be_served(environment):
     client, _ = environment
     for entry in (ROOT / 'app/static/juegos').glob('*/index.html'):
         slug = entry.parent.name

@@ -2,7 +2,7 @@
 
 ## Alcance
 
-Se incorpora únicamente el catálogo administrativo y los 20 juegos del backend
+Se incorpora únicamente el catálogo administrativo y los 30 juegos del backend
 AgeCare.
 
 Esta API usa el esquema PostgreSQL `admin` y organizaciones (`tenant_id`).
@@ -17,16 +17,15 @@ Por eso `GameApp` se adapta a esa estructura.
 - `app/game_resources.py`: valida recursos locales y contexto RLS público.
 - `app/game_static.py`: comprueba publicación antes de servir archivos; conserva
   `HEAD` público para la comprobación de disponibilidad del iframe aislado.
-- `app/static/juegos/`: los 20 juegos, archivos compartidos y metadatos, copiados
-  sin alterar la lógica ni el diseño originales.
+- `app/static/juegos/`: los 30 juegos, sus archivos compartidos y metadatos.
 - `app/main.py`: registra el router y monta `/static` mediante `GameStaticFiles`.
   Se conserva `/demo` y su redirección inicial.
 - `app/enums.py`: lectura de juegos para los cinco roles internos; modificación
   exclusivamente para `admin` y `editor`. Otros módulos no cambian sus permisos.
 - `app/config.py`: parámetro opcional `ADMIN_GAME_PUBLIC_BASE_URL`.
 - `vercel.json`: incluye los archivos de juegos en el paquete del servidor.
-- `alembic/versions/0008_games.py`: migración adicional, sin modificar las
-  migraciones ni snapshots anteriores.
+- `alembic/versions/0008_games.py` y `0009_more_games.py`: migraciones de juegos,
+  sin modificar las migraciones ni snapshots anteriores.
 - `tests/games/`: pruebas aisladas del módulo y lógica de juegos.
 
 ## Aplicación al entorno de los colegas
@@ -38,11 +37,12 @@ Por eso `GameApp` se adapta a esa estructura.
    python -m alembic upgrade head
    ```
 
-   La migración crea `admin.games_apps`, su índice, aislamiento RLS con
-   `FORCE ROW LEVEL SECURITY`, trigger de fecha y permisos SQL. Añade únicamente
-   los permisos de `games` a la matriz existente. Registra los 20 juegos para
-   cada organización que exista al aplicar la migración, todos **inactivos**.
-   No ejecuta `scripts.seed`, no vacía tablas ni modifica cuentas o contraseñas.
+   Las migraciones crean `admin.games_apps`, su índice, aislamiento RLS con
+   `FORCE ROW LEVEL SECURITY`, trigger de fecha y permisos SQL. Añaden únicamente
+   los permisos de `games` a la matriz existente. Completan el catálogo de 30 juegos para
+   cada organización existente: las fichas nuevas quedan **inactivas** y las
+   fichas anteriores conservan sus datos y estados.
+   No ejecutan `scripts.seed`, no vacían tablas ni modifican cuentas o contraseñas.
    Para organizaciones creadas después, registrar sus juegos mediante la API.
 
 3. Cuando exista una dirección pública, configurar:
